@@ -61,3 +61,36 @@ def test_query_success(mock_cache, mock_gen, mock_retrieve):
     assert res_data["sources"][0]["document"] == "annual_report.pdf"
     assert res_data["sources"][0]["page"] == 14
     assert res_data["cached"] is False
+
+def test_query_stream_success_mocked():
+    clean_db()
+    add_document("doc_123", "annual_report.pdf", 1)
+    
+    with patch("app.routers.query.retrieve_context") as mock_retrieve, \
+         patch("app.routers.query.stream_answer") as mock_stream_answer:
+         
+        mock_retrieve.return_value = [
+            Document(
+                page_content="The revenue was $4.2B in Q3.",
+                metadata={"filename": "annual_report.pdf", "page": 14, "chunk_preview": "...revenue was $4.2B..."}
+            )
+        ]
+        
+        def mock_gen_sync(question, context):
+            yield "The "
+            yield "Q3 "
+            yield "revenue."
+        mock_stream_answer.side_effect = mock_gen_sync
+        
+        response = client.post(
+            "/query/stream",
+            json={"question": "What was the revenue?", "document_id": "doc_123"}
+        )
+        
+        assert response.status_code == 200
+        assert "text/event-stream" in response.headers["content-type"]
+        
+        # Verify event layout
+        assert "event: sources" in response.text
+        assert "event: token" in response.text
+        assert "event: end" in response.text

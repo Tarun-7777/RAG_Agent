@@ -5,10 +5,10 @@ import logging
 from typing import List, Tuple
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from app.core.config import settings
 from app.models.document import add_document
+from app.services.retrieval import get_embeddings
 
 logger = logging.getLogger(__name__)
 
@@ -63,19 +63,18 @@ def ingest_document(file_bytes: bytes, filename: str) -> Tuple[str, int]:
             )
         )
         
-    logger.info(f"Generating embeddings and uploading {len(docs)} chunks to Pinecone...")
+    embeddings = get_embeddings()
     
-    embeddings = GoogleGenerativeAIEmbeddings(
-        model=settings.EMBEDDING_MODEL,
-        google_api_key=settings.GEMINI_API_KEY
-    )
-    
-    PineconeVectorStore.from_documents(
-        documents=docs,
-        embedding=embeddings,
-        index_name=settings.PINECONE_INDEX_NAME,
-        pinecone_api_key=settings.PINECONE_API_KEY
-    )
+    BATCH_SIZE = 100
+    for i in range(0, len(docs), BATCH_SIZE):
+        batch = docs[i : i + BATCH_SIZE]
+        logger.info(f"Uploading batch {i // BATCH_SIZE + 1} ({len(batch)} chunks) to Pinecone...")
+        PineconeVectorStore.from_documents(
+            documents=batch,
+            embedding=embeddings,
+            index_name=settings.PINECONE_INDEX_NAME,
+            pinecone_api_key=settings.PINECONE_API_KEY
+        )
     
     # Save metadata
     add_document(doc_id=doc_id, filename=filename, chunk_count=len(docs))

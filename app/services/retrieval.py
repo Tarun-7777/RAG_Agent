@@ -5,13 +5,19 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from app.core.config import settings
 
+from functools import lru_cache
+
 logger = logging.getLogger(__name__)
 
-def retrieve_context(query: str, document_id: Optional[str] = None, top_k: Optional[int] = None) -> List[Document]:
-    embeddings = GoogleGenerativeAIEmbeddings(
+@lru_cache(maxsize=1)
+def get_embeddings():
+    return GoogleGenerativeAIEmbeddings(
         model=settings.EMBEDDING_MODEL,
         google_api_key=settings.GEMINI_API_KEY
     )
+
+def retrieve_context(query: str, document_id: Optional[str] = None, top_k: Optional[int] = None) -> List[Document]:
+    embeddings = get_embeddings()
     
     vectorstore = PineconeVectorStore(
         index_name=settings.PINECONE_INDEX_NAME,

@@ -1,5 +1,5 @@
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 from pydantic import BaseModel
 
@@ -27,7 +27,7 @@ def init_db():
 
 def add_document(doc_id: str, filename: str, chunk_count: int) -> DocumentMetadata:
     init_db()
-    uploaded_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    uploaded_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute(
@@ -75,3 +75,13 @@ def get_document(doc_id: str) -> Optional[DocumentMetadata]:
             chunk_count=row[3]
         )
     return None
+
+def delete_document(doc_id: str) -> bool:
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM documents WHERE document_id = ?", (doc_id,))
+    changes = conn.total_changes
+    conn.commit()
+    conn.close()
+    return changes > 0

@@ -1,8 +1,10 @@
 import logging
 from fastapi import APIRouter, File, UploadFile, HTTPException, status
 from app.models.schemas import UploadResponse, DocumentListResponse, DocumentInfo
-from app.models.document import get_all_documents
+from app.models.document import get_all_documents, get_document, delete_document
 from app.services.ingestion import ingest_document
+from app.core.pinecone_client import get_pinecone_client
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -59,4 +61,29 @@ async def list_documents():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve documents: {str(e)}"
+        )
+
+@router.delete("/documents/{doc_id}", status_code=status.HTTP_200_OK)
+async def delete_document_endpoint(doc_id: str):
+    doc = get_document(doc_id)
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document with ID '{doc_id}' not found."
+        )
+        
+    try:
+        pc = get_pinecone_client()
+        index = pc.Index(settings.PINECONE_INDEX_NAME)
+        logger.info(f"Deleting vectors from Pinecone for document_id: {doc_id}")
+        index.delete(filter={"document_id": doc_id})
+        
+        delete_document(doc_id)
+        
+        return {"status": "success", "message": f"Document '{doc_id}' and all its vectors deleted."}
+    except Exception as e:
+        logger.error(f"Error deleting document {doc_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete document: {str(e)}"
         )

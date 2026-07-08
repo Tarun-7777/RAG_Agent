@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
@@ -12,10 +13,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("Initializing SQLite database...")
+    init_db()
+    
+    logger.info("Attempting connection to Redis...")
+    get_redis_client()
+    yield
+
 app = FastAPI(
     title="DocMind — Intelligent Document Q&A API",
     description="A production-ready RAG backend using FastAPI, LangChain, Google Gemini, Pinecone, and Redis.",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 app.add_middleware(
@@ -25,14 +36,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-@app.on_event("startup")
-def startup_event():
-    logger.info("Initializing SQLite database...")
-    init_db()
-    
-    logger.info("Attempting connection to Redis...")
-    get_redis_client()
 
 # Include routers
 app.include_router(upload.router)

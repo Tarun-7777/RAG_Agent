@@ -1,10 +1,12 @@
 import time
 import logging
+import json
 from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import StreamingResponse
 from app.models.schemas import QueryRequest, QueryResponse, SourceCitation
 from app.models.document import get_all_documents, get_document
 from app.services.retrieval import retrieve_context
-from app.services.generation import generate_answer
+from app.services.generation import generate_answer, stream_answer
 from app.services.cache import generate_cache_key, get_cached_response, set_cached_response
 
 logger = logging.getLogger(__name__)
@@ -95,4 +97,53 @@ async def query_documents(request: QueryRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process query: {str(e)}"
+        )
+
+@router.post("/query/stream")
+async def query_documents_stream(request: QueryRequest):
+    all_docs = get_all_documents()
+    if not all_docs:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No documents have been uploaded yet. Please upload a document before querying."
+        )
+        
+    if request.document_id:
+        doc = get_document(request.document_id)
+        if not doc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Document with ID '{request.document_id}' not found."
+            )
+            
+    try:
+        context = retrieve_context(
+            query=request.question,
+            document_id=request.document_id,
+            top_k=request.top_k
+        )
+        
+        def event_generator():
+            sources = [
+                {
+                    "document": doc.metadata.get("filename", "Unknown"),
+                    "page": doc.metadata.get("page"),
+                    "chunk_preview": doc.metadata.get("chunk_preview", doc.page_content[:200])
+                }
+                for doc in context
+            ]
+            yield f"event: sources\ndata: {json.dumps(sources)}\n\n"
+            
+            for token in stream_answer(request.question, context):
+                yield f"event: token\ndata: {json.dumps({'content': token})}\n\n"
+                
+            yield "event: end\ndata: [DONE]\n\n"
+            
+        return StreamingResponse(event_generator(), media_type="text/event-stream")
+        
+    except Exception as e:
+        logger.error(f"Error processing streaming query '{request.question}': {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process streaming query: {str(e)}"
         )
