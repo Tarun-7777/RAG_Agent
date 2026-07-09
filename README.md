@@ -284,7 +284,4 @@ httpx==0.27.0
 
 ---
 
-## 🤝 Author
 
-**Tarun** — CS @ JSS Science and Technology University  
-[GitHub](https://github.com/YOUR_USERNAME) · [LinkedIn](https://linkedin.com/in/YOUR_PROFILE)
